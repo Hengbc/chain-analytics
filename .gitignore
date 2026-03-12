@@ -1,0 +1,22 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Backend secrets
+backend/.env
+
+# Node / Next.js
+eth-dashborad-anlys/node_modules/
+eth-dashborad-anlys/.next/
+eth-dashborad-anlys/out/
+eth-dashborad-anlys/build/
+
+# Logs
+*.log
