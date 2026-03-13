@@ -1,11 +1,12 @@
-import { Geist, Geist_Mono } from "next/font/google"
+import { Geist_Mono, Montserrat } from "next/font/google"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
+import { LangProvider } from "@/components/lang-context"
 import { cn } from "@/lib/utils";
 
-const fontSans = Geist({
-  subsets: ["latin"],
+const fontSans = Montserrat({
+  subsets: ["latin", "vietnamese"],
   variable: "--font-sans",
 })
 
@@ -26,7 +27,9 @@ export default function RootLayout({
       className={cn("antialiased", fontMono.variable, "font-sans", fontSans.variable)}
     >
       <body>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <LangProvider>{children}</LangProvider>
+        </ThemeProvider>
       </body>
     </html>
   )

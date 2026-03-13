@@ -22,6 +22,70 @@ export interface BackendWallet {
   tags?: string[]
 }
 
+export interface BackendWalletActivityTransaction {
+  tx_hash: string
+  from_address?: string
+  to_address?: string
+  value: string
+  gas_price?: string
+  gas_used?: string
+  status?: number
+  block_number: number
+  timestamp?: string
+  method_id?: string
+}
+
+export interface BackendWalletActivityTokenTransfer {
+  tx_hash: string
+  token_address?: string
+  token_symbol?: string
+  token_decimals?: number
+  from_address?: string
+  to_address?: string
+  value: string
+  block_number: number
+  timestamp?: string
+}
+
+export interface BackendWalletActivity {
+  source: string
+  chain: string
+  address: string
+  tx_count: number
+  token_transfer_total: number
+  last_indexed_block: number
+  indexer_status: string
+  eth_price?: string
+  transactions: BackendWalletActivityTransaction[]
+  token_transfers: BackendWalletActivityTokenTransfer[]
+  last_seen?: string
+  updated_at?: string
+}
+
+export interface BackendDashboardWallet {
+  id: number
+  address: string
+  balance: string
+  txCount: number
+  fundedBy: string | null
+  createdAt: string
+  dataSource: string
+  clientType: string
+  clientTier: string
+  review: string
+  freqCycle: string
+  freqTier: string
+  addressPurity: string
+}
+
+export interface BackendDashboardSeed {
+  chain: string
+  latest_block: number
+  blocks_scanned: number
+  addresses_collected: number
+  wallets: BackendDashboardWallet[]
+}
+
 export async function analyzeAddresses(addresses: string[]): Promise<BackendWallet[]> {
   try {
     const resp = await fetch(`${BACKEND_URL}/api/wallets/bulk-analyze`, {
@@ -52,6 +116,37 @@ export async function getWallet(address: string): Promise<BackendWallet | null> 
     const resp = await fetch(`${BACKEND_URL}/api/wallets/${address}?chain=eth`, {
       cache: "no-store",
     })
+
+    if (!resp.ok) return null
+    return await resp.json()
+  } catch {
+    return null
+  }
+}
+
+export async function getWalletActivity(address: string, limit = 25): Promise<BackendWalletActivity | null> {
+  try {
+    const resp = await fetch(
+      `${BACKEND_URL}/api/wallets/${address}/activity?chain=eth&limit=${limit}`,
+      { cache: "no-store" }
+    )
+
+    if (!resp.ok) return null
+    return await resp.json()
+  } catch {
+    return null
+  }
+}
+
+export async function getRecentDashboardWallets(
+  limit = 10000,
+  maxBlocks = 500
+): Promise<BackendDashboardSeed | null> {
+  try {
+    const resp = await fetch(
+      `${BACKEND_URL}/api/wallets/recent-dashboard?chain=eth&limit=${limit}&max_blocks=${maxBlocks}`,
+      { cache: "no-store" }
+    )
 
     if (!resp.ok) return null
     return await resp.json()

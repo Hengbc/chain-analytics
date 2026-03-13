@@ -6,7 +6,8 @@ const CHAIN_ID = "1"
 const CACHE_TTL_MS = 10 * 60 * 1000
 
 type CacheEntry<T> = { value: T; at: number }
-const txCountCache = new Map<string, CacheEntry<number>>()
+type TxCounts = { normal: number; internal: number; token: number }
+const txCountCache = new Map<string, CacheEntry<TxCounts>>()
 const portfolioCache = new Map<string, CacheEntry<{ tokenUsd: number; holdingCount: number }>>()
 
 function buildUrl(params: Record<string, string>) {
@@ -119,59 +120,32 @@ async function fetchPortfolioUsd(addresses: string[]) {
   return { usdMap, holdingsMap }
 }
 
-async function fetchEtherscanDisplayedTxCount(address: string): Promise<number | null> {
-  try {
-    const res = await fetch(`https://etherscan.io/address/${address}`, { cache: "no-store" })
-    const html = await res.text()
 
-    const m =
-      html.match(/A total of\s*<\/span>\s*<span[^>]*>\s*([\d,]+)\s*<\/span>\s*transactions found/i) ||
-      html.match(/A total of\s*([\d,]+)\s*transactions found/i)
+async function fetchTxCounts(addresses: string[], apiKey: string) {
+  const txMap: Record<string, TxCounts> = {}
+  const now = Date.now()
 
-    if (!m) return null
-    return Number(m[1].replace(/,/g, ""))
-  } catch {
-    return null
-  }
-}
-
-async function countAllNormalTransactions(address: string, apiKey: string): Promise<number> {
-  const offset = 1000
-  let page = 1
-  let total = 0
-
-  while (true) {
+  async function countEndpoint(action: string, addr: string): Promise<number> {
     const url = buildUrl({
       chainid: CHAIN_ID,
       module: "account",
-      action: "txlist",
-      address,
+      action,
+      address: addr,
       startblock: "0",
       endblock: "99999999",
-      page: String(page),
-      offset: String(offset),
+      page: "1",
+      offset: "10000",
       sort: "desc",
       apikey: apiKey,
     })
-
-    const res = await fetch(url, { cache: "no-store" })
-    const json = await res.json()
-    const rows = Array.isArray(json?.result) ? json.result : []
-
-    if (!rows.length) break
-    total += rows.length
-    if (rows.length < offset) break
-
-    page += 1
-    await new Promise((r) => setTimeout(r, 220))
+    try {
+      const res = await fetch(url, { cache: "no-store" })
+      const json = await res.json()
+      return Array.isArray(json?.result) ? json.result.length : 0
+    } catch {
+      return 0
+    }
   }
-
-  return total
-}
-
-async function fetchTxCounts(addresses: string[], apiKey: string) {
-  const txMap: Record<string, number> = {}
-  const now = Date.now()
 
   for (const addr of addresses) {
     const key = addr.toLowerCase()
@@ -181,41 +155,18 @@ async function fetchTxCounts(addresses: string[], apiKey: string) {
       continue
     }
 
-    try {
-      // First try to match Etherscan page displayed total (best UX parity)
-      const displayed = await fetchEtherscanDisplayedTxCount(addr)
-      if (displayed !== null) {
-        txMap[key] = displayed
-        txCountCache.set(key, { value: displayed, at: Date.now() })
-      } else {
-        // fallback: API-based counting
-        const count = await countAllNormalTransactions(addr, apiKey)
-        txMap[key] = count
-        txCountCache.set(key, { value: count, at: Date.now() })
-      }
-    } catch {
-      // fallback to nonce if all else fails
-      try {
-        const url = buildUrl({
-          chainid: CHAIN_ID,
-          module: "proxy",
-          action: "eth_getTransactionCount",
-          address: addr,
-          tag: "latest",
-          apikey: apiKey,
-        })
-        const res = await fetch(url, { cache: "no-store" })
-        const json = await res.json()
-        const raw = json?.result ? parseInt(json.result as string, 16) : 0
-        const fallback = Number.isNaN(raw) ? 0 : raw
-        txMap[key] = fallback
-        txCountCache.set(key, { value: fallback, at: Date.now() })
-      } catch {
-        txMap[key] = 0
-      }
-    }
+    // Fetch all 3 endpoint types in parallel for this address
+    const [normal, internal, token] = await Promise.all([
+      countEndpoint("txlist", key),
+      countEndpoint("txlistinternal", key),
+      countEndpoint("tokentx", key),
+    ])
 
-    await new Promise((r) => setTimeout(r, 220))
+    const counts: TxCounts = { normal, internal, token }
+    txMap[key] = counts
+    txCountCache.set(key, { value: counts, at: Date.now() })
+
+    await new Promise((r) => setTimeout(r, 300))
   }
 
   return txMap
@@ -251,24 +202,63 @@ function reviewFromSignals(txCount: number, balanceEth: number, purity?: string)
   return "M"
 }
 
-export async function getWalletsFromEtherscan() {
+// ── Etherscan path ──────────────────────────────────────────────────────────
+async function getWalletsViaEtherscan() {
+  const apiKey = process.env.ETHERSCAN_API_KEY || ""
   const addresses = wallets.map((w) => w.address)
 
-  // Call our backend instead of Etherscan
+  // Step 1: balance + price first — both are single fast Etherscan calls
+  const [ethPrice, balanceMap] = await Promise.all([
+    fetchEthPrice(apiKey),
+    fetchBalances(addresses, apiKey),
+  ])
+
+  // Step 2: tx counts (Etherscan) + portfolio (Ethplorer) — different services, safe to parallel
+  const [txMap, { usdMap, holdingsMap }] = await Promise.all([
+    fetchTxCounts(addresses, apiKey),
+    fetchPortfolioUsd(addresses),
+  ])
+
+  return wallets.map((w) => {
+    const addr = w.address.toLowerCase()
+    const balanceEth = parseFloat(balanceMap[addr] ?? w.balance ?? "0")
+    const counts = txMap[addr] ?? { normal: 0, internal: 0, token: 0 }
+    const txCount = counts.normal + counts.internal + counts.token
+    const tokenUsd = usdMap[addr] ?? 0
+    const holdingCount = holdingsMap[addr] ?? 0
+    const estUsd = balanceEth * ethPrice + tokenUsd
+
+    return {
+      ...w,
+      balance: balanceEth.toString(),
+      txCount,
+      normalTxCount: counts.normal,
+      internalTxCount: counts.internal,
+      tokenTxCount: counts.token,
+      ethValueUsd: estUsd,
+      tokenValueUsd: tokenUsd,
+      tokenHoldings: holdingCount,
+      clientTier: tierFromUsd(estUsd),
+      freqTier: freqTierFromTx(txCount),
+      freqCycle: freqCycleFromTx(txCount),
+      review: reviewFromSignals(txCount, balanceEth, w.addressPurity),
+    }
+  })
+}
+
+// ── Backend path ─────────────────────────────────────────────────────────────
+async function getWalletsViaBackend() {
+  const addresses = wallets.map((w) => w.address)
   const backendResults = await analyzeAddresses(addresses)
-  
-  // Build lookup map
+
   const backendMap = new Map<string, BackendWallet>()
   for (const r of backendResults) {
-    if (r.address) {
-      backendMap.set(r.address.toLowerCase(), r)
-    }
+    if (r.address) backendMap.set(r.address.toLowerCase(), r)
   }
 
-  // Merge backend data with static wallet data
   return wallets.map((w) => {
     const backend = backendMap.get(w.address.toLowerCase())
-    
+
     if (!backend) {
       return {
         ...w,
@@ -281,16 +271,7 @@ export async function getWalletsFromEtherscan() {
 
     const balanceEth = Number(backend.balance ?? "0")
     const txCount = backend.tx_count ?? 0
-    
-    // Estimate USD value (simplified, no real-time price)
-    const ethUsd = balanceEth * 2500 // rough ETH price
-    const tokenUsd = 0 // TODO: add token value later
-    const estUsd = ethUsd + tokenUsd
-
-    const clientTier = tierFromUsd(estUsd)
-    const freqTier = freqTierFromTx(txCount)
-    const freqCycle = freqCycleFromTx(txCount)
-    const review = reviewFromSignals(txCount, balanceEth, w.addressPurity)
+    const estUsd = balanceEth * 2500
 
     return {
       ...w,
@@ -298,15 +279,22 @@ export async function getWalletsFromEtherscan() {
       txCount,
       ethValueUsd: estUsd,
       tokenHoldings: backend.token_count ?? 0,
-      clientTier,
-      freqTier,
-      freqCycle,
-      review,
-      // Add backend fields
+      clientTier: tierFromUsd(estUsd),
+      freqTier: freqTierFromTx(txCount),
+      freqCycle: freqCycleFromTx(txCount),
+      review: reviewFromSignals(txCount, balanceEth, w.addressPurity),
       wallet_type: backend.wallet_type,
       wallet_tier: backend.wallet_tier,
       risk_score: backend.risk_score,
       tags: backend.tags,
     }
   })
+}
+
+// ── Entry point — switch via DATA_SOURCE env var ──────────────────────────────
+// DATA_SOURCE=etherscan  → Etherscan + Ethplorer APIs (needs ETHERSCAN_API_KEY)
+// DATA_SOURCE=backend    → your own FastAPI at BACKEND_URL (default)
+export async function getWalletsFromEtherscan() {
+  const source = process.env.DATA_SOURCE ?? "backend"
+  return source === "etherscan" ? getWalletsViaEtherscan() : getWalletsViaBackend()
 }

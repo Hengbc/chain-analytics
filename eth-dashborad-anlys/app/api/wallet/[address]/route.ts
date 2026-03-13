@@ -1,125 +1,63 @@
 import { NextRequest, NextResponse } from "next/server"
+import { getWalletActivity } from "@/lib/backend"
 
-const ETHERSCAN_V2 = "https://api.etherscan.io/v2/api"
-const CHAIN_ID = "1"
-
-async function ethCall(params: Record<string, string>) {
-  try {
-    const url = new URL(ETHERSCAN_V2)
-    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
-    const res = await fetch(url.toString(), { cache: "no-store" })
-    return await res.json()
-  } catch {
-    return { status: "0", result: [] }
-  }
-}
-
-const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
-async function countAllTokenTransfers(address: string, apiKey: string) {
-  const offset = 1000
-  let page = 1
-  let total = 0
-
-  while (true) {
-    const json = await ethCall({
-      chainid: CHAIN_ID,
-      module: "account",
-      action: "tokentx",
-      address,
-      startblock: "0",
-      endblock: "99999999",
-      page: String(page),
-      offset: String(offset),
-      sort: "desc",
-      apikey: apiKey,
-    })
-
-    const rows = Array.isArray(json?.result) ? json.result : []
-    if (!rows.length) break
-
-    total += rows.length
-    if (rows.length < offset) break
-
-    page += 1
-    await delay(220)
-  }
-
-  return total
+function toUnixSeconds(value?: string) {
+  if (!value) return `${Math.floor(Date.now() / 1000)}`
+  const ms = Date.parse(value)
+  return Number.isNaN(ms) ? `${Math.floor(Date.now() / 1000)}` : `${Math.floor(ms / 1000)}`
 }
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ address: string }> }
 ) {
-  const apiKey = process.env.ETHERSCAN_API_KEY ?? ""
   const { address } = await params
+  const activity = await getWalletActivity(address, 25)
 
-  if (!apiKey) {
-    return NextResponse.json({ error: "Missing ETHERSCAN_API_KEY" }, { status: 500 })
+  if (!activity) {
+    return NextResponse.json({
+      source: "node-indexer",
+      chain: "eth",
+      ethPrice: "0.00",
+      txCount: 0,
+      tokenTransferTotal: 0,
+      lastIndexedBlock: 0,
+      indexerStatus: "unavailable",
+      transactions: [],
+      tokenTransfers: [],
+    })
   }
 
-  // 1) ETH price
-  const priceJson = await ethCall({
-    chainid: CHAIN_ID,
-    module: "stats",
-    action: "ethprice",
-    apikey: apiKey,
-  })
-  await delay(220)
-
-  // 2) Normal transactions
-  const txJson = await ethCall({
-    chainid: CHAIN_ID,
-    module: "account",
-    action: "txlist",
-    address,
-    startblock: "0",
-    endblock: "99999999",
-    page: "1",
-    offset: "25",
-    sort: "desc",
-    apikey: apiKey,
-  })
-  await delay(220)
-
-  // 3) ERC-20 token transfers
-  const tokenJson = await ethCall({
-    chainid: CHAIN_ID,
-    module: "account",
-    action: "tokentx",
-    address,
-    startblock: "0",
-    endblock: "99999999",
-    page: "1",
-    offset: "25",
-    sort: "desc",
-    apikey: apiKey,
-  })
-  await delay(220)
-
-  // 4) Nonce (outgoing tx count)
-  const nonceJson = await ethCall({
-    chainid: CHAIN_ID,
-    module: "proxy",
-    action: "eth_getTransactionCount",
-    address,
-    tag: "latest",
-    apikey: apiKey,
-  })
-
-  const ethPrice = Number(priceJson?.result?.ethusd ?? 0)
-  const rawNonce = nonceJson?.result ? parseInt(nonceJson.result as string, 16) : 0
-  const txCount = Number.isNaN(rawNonce) ? 0 : rawNonce
-
-  const tokenTransfers = Array.isArray(tokenJson?.result) ? tokenJson.result : []
-  const tokenTransferTotal = await countAllTokenTransfers(address, apiKey)
-
   return NextResponse.json({
-    ethPrice: ethPrice.toFixed(2),
-    txCount,
-    tokenTransferTotal,
-    transactions: Array.isArray(txJson?.result) ? txJson.result : [],
-    tokenTransfers,
+    source: activity.source,
+    chain: activity.chain,
+    ethPrice: Number(activity.eth_price ?? 0).toFixed(2),
+    txCount: activity.tx_count ?? 0,
+    tokenTransferTotal: activity.token_transfer_total ?? 0,
+    lastIndexedBlock: activity.last_indexed_block ?? 0,
+    indexerStatus: activity.indexer_status ?? "unknown",
+    transactions: activity.transactions.map((tx) => ({
+      hash: tx.tx_hash,
+      from: tx.from_address,
+      to: tx.to_address,
+      value: tx.value,
+      gasPrice: tx.gas_price ?? "0",
+      gasUsed: tx.gas_used ?? "0",
+      status: String(tx.status ?? 0),
+      blockNumber: String(tx.block_number ?? 0),
+      timeStamp: toUnixSeconds(tx.timestamp),
+      methodId: tx.method_id ?? "",
+    })),
+    tokenTransfers: activity.token_transfers.map((tx) => ({
+      hash: tx.tx_hash,
+      tokenAddress: tx.token_address,
+      tokenSymbol: tx.token_symbol ?? "TOKEN",
+      tokenDecimal: String(tx.token_decimals ?? 0),
+      from: tx.from_address,
+      to: tx.to_address,
+      value: tx.value,
+      blockNumber: String(tx.block_number ?? 0),
+      timeStamp: toUnixSeconds(tx.timestamp),
+    })),
   })
 }

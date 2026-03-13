@@ -10,8 +10,9 @@ function ThemeProvider({
   return (
     <NextThemesProvider
       attribute="class"
-      defaultTheme="system"
-      enableSystem
+      defaultTheme="dark"
+      enableSystem={false}
+      storageKey="eth-behavior-theme"
       disableTransitionOnChange
       {...props}
     >

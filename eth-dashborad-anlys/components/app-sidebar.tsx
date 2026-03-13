@@ -3,7 +3,10 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 import { useFilters, applyFilters, SECTION_FIELD_MAP } from "@/components/filter-context"
+import { useLang } from "@/components/lang-context"
+import type { Translations } from "@/lib/i18n"
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Sidebar,
   SidebarContent,
@@ -15,88 +18,101 @@ import {
   SidebarGroup,
   SidebarGroupLabel,
 } from "@/components/ui/sidebar"
-import { CommandIcon } from "lucide-react"
 
-const FILTER_SECTIONS = [
-  {
-    id: "data-source",
-    title: "DATA SOURCE",
-    items: [
-      { key: "R", label: "Real-time" },
-      { key: "H", label: "Historical" },
-    ],
-  },
-  {
-    id: "client-type",
-    title: "CLIENT TYPE",
-    items: [
-      { key: "U",  label: "Real User" },
-      { key: "E",  label: "Exchange" },
-      { key: "S",  label: "Script" },
-      { key: "AP", label: "Malicious" },
-      { key: "B",  label: "Bridge" },
-    ],
-  },
-  {
-    id: "client-tier",
-    title: "CLIENT TIER",
-    items: [
-      { key: "L1", label: "<10k" },
-      { key: "L2", label: "10k-99.9k" },
-      { key: "L3", label: "100k-999.9k" },
-      { key: "L4", label: "1M-9.99M" },
-      { key: "L5", label: "10M+" },
-    ],
-  },
-  {
-    id: "review",
-    title: "REVIEW",
-    items: [
-      { key: "A", label: "Auto" },
-      { key: "M", label: "Manual" },
-    ],
-  },
-  {
-    id: "freq-cycle",
-    title: "FREQ CYCLE",
-    items: [
-      { key: "D", label: "Day" },
-      { key: "W", label: "Week" },
-      { key: "M", label: "Month" },
-      { key: "Y", label: "Year" },
-    ],
-  },
-  {
-    id: "freq-tier",
-    title: "FREQ TIER",
-    items: [
-      { key: "F1", label: "0 TX" },
-      { key: "F2", label: "1-3 TX" },
-      { key: "F3", label: "4-10 TX" },
-      { key: "F4", label: "11-19 TX" },
-      { key: "F5", label: "20+ TX" },
-    ],
-  },
-  {
-    id: "address-purity",
-    title: "ADDRESS PURITY",
-    items: [
-      { key: "C", label: "Clean" },
-      { key: "P", label: "Toxic" },
-    ],
-  },
-]
+function EthereumIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" {...props}>
+      <path d="M12 2 6.5 11.2 12 8.4l5.5 2.8L12 2Z" fill="currentColor" />
+      <path d="M12 9.6 6.5 12.4 12 15.6l5.5-3.2L12 9.6Z" fill="currentColor" opacity="0.8" />
+      <path d="M12 22 6.5 13.6 12 16.8l5.5-3.2L12 22Z" fill="currentColor" opacity="0.65" />
+    </svg>
+  )
+}
+
+function getFilterSections(t: Translations) {
+  return [
+    {
+      id: "data-source",
+      title: t.filterDataSource,
+      items: [
+        { key: "R", label: t.realtime },
+        { key: "H", label: t.historical },
+      ],
+    },
+    {
+      id: "client-type",
+      title: t.filterClientType,
+      items: [
+        { key: "U",  label: t.realUser },
+        { key: "E",  label: t.exchange },
+        { key: "S",  label: t.script },
+        { key: "AP", label: t.malicious },
+        { key: "B",  label: t.bridge },
+      ],
+    },
+    {
+      id: "client-tier",
+      title: t.filterClientTier,
+      items: [
+        { key: "L1", label: "<10k" },
+        { key: "L2", label: "10k-99.9k" },
+        { key: "L3", label: "100k-999.9k" },
+        { key: "L4", label: "1M-9.99M" },
+        { key: "L5", label: "10M+" },
+      ],
+    },
+    {
+      id: "review",
+      title: t.filterReview,
+      items: [
+        { key: "A", label: t.auto },
+        { key: "M", label: t.manual },
+      ],
+    },
+    {
+      id: "freq-cycle",
+      title: t.filterFreqCycle,
+      items: [
+        { key: "D", label: t.day },
+        { key: "W", label: t.week },
+        { key: "M", label: t.month },
+        { key: "Y", label: t.year },
+      ],
+    },
+    {
+      id: "freq-tier",
+      title: t.filterFreqTier,
+      items: [
+        { key: "F1", label: t.tx0 },
+        { key: "F2", label: t.tx13 },
+        { key: "F3", label: t.tx410 },
+        { key: "F4", label: t.tx1119 },
+        { key: "F5", label: t.tx20plus },
+      ],
+    },
+    {
+      id: "address-purity",
+      title: t.filterAddressPurity,
+      items: [
+        { key: "C", label: t.clean },
+        { key: "P", label: t.toxic },
+      ],
+    },
+  ]
+}
 
 function FilterGroup({
   sectionId,
   title,
   items,
   data,
+  isLoading,
 }: {
   sectionId: string
   title: string
   items: { key: string; label: string }[]
   data: Record<string, unknown>[]
+  isLoading?: boolean
 }) {
   const { activeFilters, toggleFilter } = useFilters()
 
@@ -150,11 +166,11 @@ function FilterGroup({
                 <span className="flex-1 text-[12px]">{item.label}</span>
                 <span
                   className={cn(
-                    "ml-auto text-[11px] tabular-nums transition-colors",
+                    "ml-auto inline-flex min-w-6 justify-end text-[11px] tabular-nums transition-colors",
                     isActive ? "text-sidebar-primary font-semibold" : "text-sidebar-foreground/30"
                   )}
                 >
-                  {count}
+                  {isLoading ? <Skeleton className="h-3 w-5 rounded-sm" /> : count}
                 </span>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -167,11 +183,15 @@ function FilterGroup({
 
 export function AppSidebar({
   data,
+  isLoading,
   ...props
 }: React.ComponentProps<typeof Sidebar> & {
   data: Record<string, unknown>[]
+  isLoading?: boolean
 }) {
   const { resetFilters, activeFilters } = useFilters()
+  const { t } = useLang()
+  const filterSections = getFilterSections(t)
 
   return (
     <Sidebar collapsible="offcanvas" {...props}>
@@ -180,8 +200,8 @@ export function AppSidebar({
           <SidebarMenuItem>
             <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:p-1.5!">
               <a href="#">
-                <CommandIcon className="size-5!" />
-                <span className="text-base font-semibold">Acme Inc.</span>
+                <EthereumIcon className="size-5! text-[#627EEA]" />
+                <span className="truncate text-base font-semibold">{t.sidebarCompany}</span>
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -189,16 +209,16 @@ export function AppSidebar({
       </SidebarHeader>
 
       <SidebarContent>
-        {FILTER_SECTIONS.map((section) => (
+        {filterSections.map((section) => (
           <FilterGroup
             key={section.id}
             sectionId={section.id}
             title={section.title}
             items={section.items}
             data={data}
+            isLoading={isLoading}
           />
         ))}
-
       </SidebarContent>
 
       <SidebarFooter className="p-3 space-y-2">
@@ -209,10 +229,10 @@ export function AppSidebar({
           onClick={resetFilters}
           disabled={activeFilters.size === 0}
         >
-          Reset All
+          {t.resetAll}
         </Button>
         <Button size="sm" className="w-full h-9 text-sm">
-          Actions
+          {t.actions}
         </Button>
       </SidebarFooter>
     </Sidebar>
