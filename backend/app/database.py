@@ -78,12 +78,12 @@ def execute_query(query: str, params: dict = None, page_size: int = 100):
     return list(result)
 
 
-def execute_query_paged(query: str, params: dict = None, page_size: int = 50, paging_state=None):
+def execute_query_paged(query: str, params: tuple = None, page_size: int = 50, paging_state=None):
     """Execute with manual paging for API pagination."""
     session = get_scylla_session()
     stmt = SimpleStatement(query, fetch_size=page_size)
     if paging_state:
-        result = session.execute(stmt, params or {}, paging_state=paging_state)
+        result = session.execute(stmt, params or (), paging_state=paging_state)
     else:
-        result = session.execute(stmt, params or {})
+        result = session.execute(stmt, params or ()) if params else session.execute(stmt)
     return result

@@ -50,14 +50,27 @@ async def get_block_by_number(chain: str, block_num: int, full_tx: bool = True) 
     return await evm_rpc(chain, "eth_getBlockByNumber", [hex_num, full_tx])
 
 
-async def get_block_receipts(chain: str, block_num: int) -> list:
-    """Get all receipts for a block (requires eth_getBlockReceipts support)."""
+async def get_block_receipts(chain: str, block_num: int, tx_hashes: list = None) -> list:
+    """Get all receipts for a block.
+
+    Tries eth_getBlockReceipts first (Geth 1.13+/Erigon).
+    Falls back to individual eth_getTransactionReceipt calls if needed.
+    """
     hex_num = hex(block_num)
     try:
-        return await evm_rpc(chain, "eth_getBlockReceipts", [hex_num]) or []
+        receipts = await evm_rpc(chain, "eth_getBlockReceipts", [hex_num])
+        if receipts:
+            return receipts
     except Exception:
-        # Fallback: some nodes don't support this
+        pass
+
+    # Fallback: fetch receipts individually (slower but universally supported)
+    if not tx_hashes:
         return []
+    import asyncio
+    tasks = [get_transaction_receipt(chain, h) for h in tx_hashes]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    return [r for r in results if isinstance(r, dict)]
 
 
 async def get_transaction_receipt(chain: str, tx_hash: str) -> dict:

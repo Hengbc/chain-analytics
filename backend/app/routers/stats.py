@@ -16,24 +16,21 @@ async def get_stats(chain: ChainEnum = Query(ChainEnum.eth)):
     """Dashboard statistics for a chain."""
     c = chain.value
 
-    # Wallet counts by type
-    type_rows = execute_query(
-        "SELECT wallet_type, count(*) as cnt FROM wallets WHERE chain = %s "
-        "GROUP BY chain ALLOW FILTERING",
-        (c,),
-    )
-
     # Get indexer state
     state_rows = execute_query(
         "SELECT * FROM indexer_state WHERE chain = %s", (c,)
     )
     state = state_rows[0] if state_rows else {}
 
-    # Count wallets (approximate)
+    # Count wallets — ScyllaDB returns count as "count" or "system.count(*)"
     wallet_rows = execute_query(
-        "SELECT count(*) as cnt FROM wallets_by_time WHERE chain = %s", (c,)
+        "SELECT count(*) FROM wallets_by_time WHERE chain = %s", (c,)
     )
-    total_wallets = wallet_rows[0]["cnt"] if wallet_rows else 0
+    if wallet_rows:
+        row = wallet_rows[0]
+        total_wallets = row.get("count") or row.get("system.count(*)") or 0
+    else:
+        total_wallets = 0
 
     return StatsResponse(
         chain=c,

@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   scylladb:
     image: scylladb/scylla:5.4
@@ -43,6 +41,7 @@ services:
       - chain-net
 
   api:
+    image: chain-analytics-backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -59,6 +58,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./backend/app:/app/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 3001 --reload
@@ -66,9 +67,7 @@ services:
       - chain-net
 
   indexer:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: chain-analytics-backend:latest
     container_name: chain-analytics-indexer
     env_file:
       - ./backend/.env
@@ -78,6 +77,8 @@ services:
     depends_on:
       scylladb:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./backend/app:/app/app
     command: python -m app.services.indexer

@@ -1,3 +1,4 @@
+
 """Central configuration — reads from .env / environment."""
 
 from pydantic_settings import BaseSettings
@@ -42,7 +43,8 @@ class Settings(BaseSettings):
     # ── Indexer ──
     indexer_batch_size: int = 100
     indexer_poll_interval: int = 2
-    indexer_enabled_chains: str = "eth,bnb,arb,op,base,avax,xlayer,polygon,solana,btc"
+    # Only ETH has a local node configured. Add other chains in .env if you have their RPCs.
+    indexer_enabled_chains: str = "eth"
 
     class Config:
         env_file = ".env"

@@ -69,6 +69,70 @@ class WalletListResponse(BaseModel):
     page_size: int
 
 
+class WalletActivityTransaction(BaseModel):
+    tx_hash: str
+    from_address: Optional[str] = None
+    to_address: Optional[str] = None
+    value: str = "0"
+    gas_price: str = "0"
+    gas_used: str = "0"
+    status: int = 0
+    block_number: int = 0
+    timestamp: Optional[datetime] = None
+    method_id: Optional[str] = None
+
+
+class WalletActivityTokenTransfer(BaseModel):
+    tx_hash: str
+    token_address: Optional[str] = None
+    token_symbol: Optional[str] = None
+    token_decimals: int = 0
+    from_address: Optional[str] = None
+    to_address: Optional[str] = None
+    value: str = "0"
+    block_number: int = 0
+    timestamp: Optional[datetime] = None
+
+
+class WalletActivityResponse(BaseModel):
+    source: str = "node-indexer"
+    chain: str
+    address: str
+    tx_count: int = 0
+    token_transfer_total: int = 0
+    last_indexed_block: int = 0
+    indexer_status: str = "unknown"
+    eth_price: str = "0"
+    transactions: List[WalletActivityTransaction] = []
+    token_transfers: List[WalletActivityTokenTransfer] = []
+    last_seen: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class DashboardSeedWallet(BaseModel):
+    id: int
+    address: str
+    balance: str = "0"
+    txCount: int = 0
+    fundedBy: Optional[str] = None
+    createdAt: str
+    dataSource: str = "R"
+    clientType: str = "U"
+    clientTier: str = "L1"
+    review: str = "M"
+    freqCycle: str = "Y"
+    freqTier: str = "F1"
+    addressPurity: str = "C"
+
+
+class DashboardSeedResponse(BaseModel):
+    chain: str
+    latest_block: int
+    blocks_scanned: int
+    addresses_collected: int
+    wallets: List[DashboardSeedWallet]
+
+
 class AnalyzeRequest(BaseModel):
     chain: ChainEnum
     address: str

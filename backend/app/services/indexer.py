@@ -88,17 +88,20 @@ def index_block(chain: str, block: dict, receipts: list = None):
         if isinstance(tx, str):
             continue  # skip if block was fetched without full tx
 
-        tx_hash = tx["hash"].lower()
+        tx_hash = (tx.get("hash") or "").lower()
+        if not tx_hash:
+            continue
         from_addr = (tx.get("from") or "").lower()
         to_addr = (tx.get("to") or "").lower()
-        value = int(tx.get("value", "0x0"), 16)
-        gas_price = int(tx.get("gasPrice", "0x0"), 16)
-        input_data = tx.get("input", "0x")
+        value = int(tx.get("value") or "0x0", 16)
+        # EIP-1559 txs may have null gasPrice — fall back to maxFeePerGas
+        gas_price = int(tx.get("gasPrice") or tx.get("maxFeePerGas") or "0x0", 16)
+        input_data = tx.get("input") or "0x"
         method_id = input_data[:10] if len(input_data) >= 10 else ""
 
         receipt = receipt_map.get(tx_hash, {})
-        gas_used = int(receipt.get("gasUsed", "0x0"), 16) if receipt else 0
-        status = int(receipt.get("status", "0x1"), 16) if receipt else 1
+        gas_used = int(receipt.get("gasUsed") or "0x0", 16) if receipt else 0
+        status = int(receipt.get("status") or "0x1", 16) if receipt else 1
 
         # Insert into transactions_by_hash
         session.execute(
@@ -211,7 +214,12 @@ async def index_chain(chain: str):
                 if not block:
                     continue
 
-                receipts = await get_block_receipts(chain, block_num)
+                txs = block.get("transactions", [])
+                tx_hashes = [
+                    tx["hash"] for tx in txs
+                    if isinstance(tx, dict) and tx.get("hash")
+                ]
+                receipts = await get_block_receipts(chain, block_num, tx_hashes)
                 index_block(chain, block, receipts)
 
                 if block_num % 100 == 0:
