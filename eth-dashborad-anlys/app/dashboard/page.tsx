@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic"
 export const revalidate = 0
 
 export default async function Page() {
-  const { wallets, source } = await loadDashboardWallets()
+  const { wallets, source, error } = await loadDashboardWallets()
 
   return (
     <FilterProvider>
@@ -19,7 +19,7 @@ export default async function Page() {
           } as React.CSSProperties
         }
       >
-        <DashboardShell initialData={wallets} initialDataSource={source} />
+        <DashboardShell initialData={wallets} initialDataSource={source} initialError={error} />
       </SidebarProvider>
     </FilterProvider>
   )

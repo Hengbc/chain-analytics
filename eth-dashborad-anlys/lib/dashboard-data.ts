@@ -1,19 +1,18 @@
 import { z } from "zod"
-import fallbackWallets from "@/app/dashboard/data.json"
 import { getRecentDashboardWallets } from "@/lib/backend"
 import { schema } from "@/lib/wallet-schema"
 
 type DashboardWallet = z.infer<typeof schema>
 
-export type DashboardDataSource = "backend" | "fallback"
+export type DashboardDataSource = "backend" | "unavailable"
 
 export async function loadDashboardWallets(
   limit = 10000,
   maxBlocks = 500
-): Promise<{ wallets: DashboardWallet[]; source: DashboardDataSource }> {
+): Promise<{ wallets: DashboardWallet[]; source: DashboardDataSource; error?: string }> {
   const backendData = await getRecentDashboardWallets(limit, maxBlocks)
 
-  if (backendData?.wallets?.length) {
+  if (backendData) {
     return {
       wallets: backendData.wallets as DashboardWallet[],
       source: "backend",
@@ -21,7 +20,8 @@ export async function loadDashboardWallets(
   }
 
   return {
-    wallets: fallbackWallets as DashboardWallet[],
-    source: "fallback",
+    wallets: [],
+    source: "unavailable",
+    error: "Could not load dashboard data from the backend.",
   }
 }

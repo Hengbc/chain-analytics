@@ -14,7 +14,15 @@ export async function GET(request: Request) {
       ? Math.min(Math.max(requestedMaxBlocks, 1), 5000)
       : 500
 
-    const { wallets } = await loadDashboardWallets(limit, maxBlocks)
+    const { wallets, source, error } = await loadDashboardWallets(limit, maxBlocks)
+
+    if (source !== "backend") {
+      return NextResponse.json(
+        { error: error ?? "Could not load wallets from the backend." },
+        { status: 502 }
+      )
+    }
+
     return NextResponse.json(wallets, {
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate",

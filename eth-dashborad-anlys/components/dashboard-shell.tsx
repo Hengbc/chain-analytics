@@ -49,13 +49,16 @@ function mergeIncomingWallets(
 
 export function DashboardShell({
   initialData,
-  initialDataSource = "fallback",
+  initialDataSource = "unavailable",
+  initialError,
 }: {
   initialData: WalletRow[]
   initialDataSource?: DashboardDataSource
+  initialError?: string
 }) {
   const [wallets, setWallets] = React.useState(initialData)
   const [isSummaryLoading, setIsSummaryLoading] = React.useState(initialDataSource !== "backend")
+  const [errorMessage, setErrorMessage] = React.useState<string | null>(initialError ?? null)
   const overridesRef = React.useRef<Record<number, Partial<WalletRow>>>({})
 
   const handleDataChange = React.useCallback((value: WalletUpdate) => {
@@ -99,10 +102,21 @@ export function DashboardShell({
         })
 
         if (!response.ok) {
+          let message = "Could not load dashboard data from the backend."
+          try {
+            const errorBody = (await response.json()) as { error?: string }
+            if (errorBody?.error) {
+              message = errorBody.error
+            }
+          } catch {
+            // ignore parse failures
+          }
+          setErrorMessage(message)
           return
         }
 
         const incomingWallets = (await response.json()) as WalletRow[]
+        setErrorMessage(null)
 
         React.startTransition(() => {
           setWallets((currentWallets) =>
@@ -112,6 +126,7 @@ export function DashboardShell({
       } catch (error) {
         if ((error as Error).name !== "AbortError") {
           console.error("Dashboard refresh failed:", error)
+          setErrorMessage("Could not load dashboard data from the backend.")
         }
       } finally {
         if (!controller.signal.aborted) {
@@ -137,6 +152,11 @@ export function DashboardShell({
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+              {errorMessage ? (
+                <div className="mx-4 rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive lg:mx-6">
+                  {errorMessage}
+                </div>
+              ) : null}
               <SectionCards data={wallets} isLoading={isSummaryLoading} />
               <DataTable data={wallets} onDataChange={handleDataChange} isLoading={isSummaryLoading} />
             </div>
