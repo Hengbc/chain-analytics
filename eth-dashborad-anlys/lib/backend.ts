@@ -141,16 +141,24 @@ export async function getWalletActivity(address: string, limit = 25): Promise<Ba
 export async function getRecentDashboardWallets(
   limit = 10000,
   maxBlocks = 500
-): Promise<BackendDashboardSeed | null> {
-  try {
-    const resp = await fetch(
-      `${BACKEND_URL}/api/wallets/recent-dashboard?chain=eth&limit=${limit}&max_blocks=${maxBlocks}`,
-      { cache: "no-store" }
-    )
+): Promise<BackendDashboardSeed> {
+  const resp = await fetch(
+    `${BACKEND_URL}/api/wallets/recent-dashboard?chain=eth&limit=${limit}&max_blocks=${maxBlocks}`,
+    { cache: "no-store" }
+  )
 
-    if (!resp.ok) return null
-    return await resp.json()
-  } catch {
-    return null
+  if (!resp.ok) {
+    let message = `Backend error: ${resp.status}`
+
+    try {
+      const errorBody = (await resp.json()) as { detail?: string; error?: string }
+      message = errorBody.detail ?? errorBody.error ?? message
+    } catch {
+      // ignore parse failures and keep the status-based fallback
+    }
+
+    throw new Error(message)
   }
+
+  return await resp.json()
 }

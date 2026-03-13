@@ -10,18 +10,18 @@ export async function loadDashboardWallets(
   limit = 10000,
   maxBlocks = 500
 ): Promise<{ wallets: DashboardWallet[]; source: DashboardDataSource; error?: string }> {
-  const backendData = await getRecentDashboardWallets(limit, maxBlocks)
-
-  if (backendData) {
+  try {
+    const backendData = await getRecentDashboardWallets(limit, maxBlocks)
     return {
       wallets: backendData.wallets as DashboardWallet[],
       source: "backend",
     }
-  }
-
-  return {
-    wallets: [],
-    source: "unavailable",
-    error: "Could not load dashboard data from the backend.",
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not load dashboard data from the backend."
+    return {
+      wallets: [],
+      source: "unavailable",
+      error: message,
+    }
   }
 }
