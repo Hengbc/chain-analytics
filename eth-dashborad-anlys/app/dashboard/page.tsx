@@ -1,9 +1,14 @@
 import { DashboardShell } from "@/components/dashboard-shell"
 import { FilterProvider } from "@/components/filter-context"
 import { SidebarProvider } from "@/components/ui/sidebar"
-import fallbackWallets from "@/app/dashboard/data.json"
+import { loadDashboardWallets } from "@/lib/dashboard-data"
 
-export default function Page() {
+export const dynamic = "force-dynamic"
+export const revalidate = 0
+
+export default async function Page() {
+  const { wallets, source } = await loadDashboardWallets()
+
   return (
     <FilterProvider>
       <SidebarProvider
@@ -14,7 +19,7 @@ export default function Page() {
           } as React.CSSProperties
         }
       >
-        <DashboardShell initialData={fallbackWallets} />
+        <DashboardShell initialData={wallets} initialDataSource={source} />
       </SidebarProvider>
     </FilterProvider>
   )

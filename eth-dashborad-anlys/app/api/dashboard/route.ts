@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
-import { getRecentDashboardWallets } from "@/lib/backend"
-import { getWalletsFromEtherscan } from "@/lib/etherscan"
+import { loadDashboardWallets } from "@/lib/dashboard-data"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -15,10 +14,9 @@ export async function GET(request: Request) {
       ? Math.min(Math.max(requestedMaxBlocks, 1), 5000)
       : 500
 
-    const backendData = await getRecentDashboardWallets(limit, maxBlocks)
-    const data = backendData?.wallets ?? (await getWalletsFromEtherscan())
+    const { wallets } = await loadDashboardWallets(limit, maxBlocks)
 
-    return NextResponse.json(data, {
+    return NextResponse.json(wallets, {
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate",
       },

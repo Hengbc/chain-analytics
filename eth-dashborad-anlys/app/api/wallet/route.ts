@@ -1,35 +1,27 @@
 import { NextResponse } from "next/server"
-import wallets from "@/app/dashboard/data.json"
-import { analyzeAddresses } from "@/lib/backend"
+import { loadDashboardWallets } from "@/lib/dashboard-data"
 
-export async function GET() {
+export const dynamic = "force-dynamic"
+export const revalidate = 0
+
+export async function GET(request: Request) {
   try {
-    const addresses = wallets.map((w) => w.address)
-    
-    // Call our backend API instead of Etherscan
-    const backendResults = await analyzeAddresses(addresses)
-    
-    // Build lookup map
-    const backendMap = new Map()
-    for (const r of backendResults) {
-      if (r.address) {
-        backendMap.set(r.address.toLowerCase(), r)
-      }
-    }
+    const { searchParams } = new URL(request.url)
+    const requestedLimit = Number(searchParams.get("limit") ?? 10000)
+    const requestedMaxBlocks = Number(searchParams.get("maxBlocks") ?? 500)
+    const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 10000) : 10000
+    const maxBlocks = Number.isFinite(requestedMaxBlocks)
+      ? Math.min(Math.max(requestedMaxBlocks, 1), 5000)
+      : 500
 
-    const result = wallets.map((w) => {
-      const backend = backendMap.get(w.address.toLowerCase())
-      return {
-        ...w,
-        balance: backend?.balance ?? w.balance ?? "0",
-        txCount: backend?.tx_count ?? w.txCount ?? 0,
-      }
+    const { wallets } = await loadDashboardWallets(limit, maxBlocks)
+    return NextResponse.json(wallets, {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+      },
     })
-
-    return NextResponse.json(result)
-  } catch (e) {
-    console.error("Backend fetch error:", e)
-    // Fallback to static data
-    return NextResponse.json(wallets)
+  } catch (error) {
+    console.error("Wallet list fetch failed:", error)
+    return NextResponse.json({ error: "Failed to load wallets" }, { status: 500 })
   }
 }

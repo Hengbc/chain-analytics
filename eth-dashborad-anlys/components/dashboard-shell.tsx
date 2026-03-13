@@ -8,6 +8,7 @@ import { SectionCards } from "@/components/section-cards"
 import { SiteHeader } from "@/components/site-header"
 import { SidebarInset } from "@/components/ui/sidebar"
 import { schema } from "@/lib/wallet-schema"
+import type { DashboardDataSource } from "@/lib/dashboard-data"
 
 type WalletRow = z.infer<typeof schema>
 type WalletUpdate = React.SetStateAction<WalletRow[]>
@@ -46,9 +47,15 @@ function mergeIncomingWallets(
   return merged
 }
 
-export function DashboardShell({ initialData }: { initialData: WalletRow[] }) {
+export function DashboardShell({
+  initialData,
+  initialDataSource = "fallback",
+}: {
+  initialData: WalletRow[]
+  initialDataSource?: DashboardDataSource
+}) {
   const [wallets, setWallets] = React.useState(initialData)
-  const [isSummaryLoading, setIsSummaryLoading] = React.useState(true)
+  const [isSummaryLoading, setIsSummaryLoading] = React.useState(initialDataSource !== "backend")
   const overridesRef = React.useRef<Record<number, Partial<WalletRow>>>({})
 
   const handleDataChange = React.useCallback((value: WalletUpdate) => {
