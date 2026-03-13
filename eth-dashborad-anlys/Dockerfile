@@ -1,4 +1,4 @@
-FROM node:20-alpine AS base
+FROM public.ecr.aws/docker/library/node:20-alpine AS base
 
 WORKDIR /app
 
@@ -18,7 +18,7 @@ ENV BACKEND_URL=$BACKEND_URL
 RUN npm run build
 
 # Production
-FROM node:20-alpine AS runner
+FROM public.ecr.aws/docker/library/node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
