@@ -1,0 +1,7 @@
+node_modules/
+.next/
+test-results/
+coverage/
+devserver.log
+tsconfig.tsbuildinfo
+.env.local
