@@ -4,6 +4,7 @@ import * as React from "react"
 import { z } from "zod"
 import { AppSidebar } from "@/components/app-sidebar"
 import { DataTable } from "@/components/data-table"
+import { LiveBlockFeed } from "@/components/live-block-feed"
 import { SectionCards } from "@/components/section-cards"
 import { SiteHeader } from "@/components/site-header"
 import { SidebarInset } from "@/components/ui/sidebar"
@@ -137,7 +138,13 @@ export function DashboardShell({
 
     syncWallets()
 
-    return () => controller.abort()
+    // Poll every 15 s to keep the wallet table up-to-date
+    const intervalId = window.setInterval(() => { void syncWallets() }, 15_000)
+
+    return () => {
+      controller.abort()
+      window.clearInterval(intervalId)
+    }
   }, [])
 
   return (
@@ -158,6 +165,7 @@ export function DashboardShell({
                 </div>
               ) : null}
               <SectionCards data={wallets} isLoading={isSummaryLoading} />
+              <LiveBlockFeed />
               <DataTable data={wallets} onDataChange={handleDataChange} isLoading={isSummaryLoading} />
             </div>
           </div>
