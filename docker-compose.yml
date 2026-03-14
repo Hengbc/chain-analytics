@@ -24,7 +24,7 @@ services:
       - ./scripts:/app/scripts
 
   frontend:
-    build: ./eth-dashboard-analysis
+    build: ./eth-dashborad-anlys
     container_name: chain-frontend
     ports:
       - "3000:3000"
