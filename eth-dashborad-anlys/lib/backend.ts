@@ -66,6 +66,8 @@ export interface BackendDashboardWallet {
   id: number
   address: string
   balance: string
+  ethValueUsd?: number
+  tokenValueUsd?: number
   txCount: number
   fundedBy: string | null
   createdAt: string

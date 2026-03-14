@@ -307,6 +307,22 @@ function getColumns(t: Translations): ColumnDef<z.infer<typeof schema>>[] {
       accessorKey: "balance",
       header: () => <div className="w-full text-right">{t.colEthValue}</div>,
       cell: ({ row }) => {
+        const hasEthValue = typeof row.original.ethValueUsd === "number"
+        const hasTokenValue = typeof row.original.tokenValueUsd === "number"
+
+        if (!hasEthValue && !hasTokenValue) {
+          return (
+            <div className="text-right leading-tight space-y-0.5">
+              <div className="text-[10px] font-mono uppercase tracking-[0.12em] text-muted-foreground">
+                USD
+              </div>
+              <div className="text-sm font-medium text-muted-foreground">
+                {t.pending}
+              </div>
+            </div>
+          )
+        }
+
         const totalUsd = row.original.ethValueUsd ?? 0
         const tokenUsd = row.original.tokenValueUsd ?? 0
         const ethUsd = totalUsd - tokenUsd
