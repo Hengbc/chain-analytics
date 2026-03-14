@@ -55,27 +55,52 @@ export function LiveBlockFeed() {
   }, [])
 
   React.useEffect(() => {
-    const es = new EventSource("/api/stream/blocks?chain=eth")
+    let es: EventSource | null = null
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+    let retryDelay = 3000
+    let destroyed = false
 
-    es.onopen = () => setStatus("live")
+    function connect() {
+      if (destroyed) return
+      setStatus("connecting")
+      es = new EventSource("/api/stream/blocks?chain=eth")
 
-    es.onmessage = (e) => {
-      try {
-        const block: LiveBlock = JSON.parse(e.data)
-        if (block.blockNumber) {
-          setBlocks((prev) => [block, ...prev].slice(0, 20))
+      es.onopen = () => {
+        retryDelay = 3000
+        setStatus("live")
+      }
+
+      es.onmessage = (e) => {
+        try {
+          const block: LiveBlock = JSON.parse(e.data)
+          if (block.blockNumber) {
+            setBlocks((prev) => [block, ...prev].slice(0, 20))
+          }
+        } catch {
+          // ignore malformed frames
         }
-      } catch {
-        // ignore malformed frames
+      }
+
+      es.onerror = () => {
+        es?.close()
+        es = null
+        if (!destroyed) {
+          setStatus("error")
+          retryTimer = setTimeout(() => {
+            retryDelay = Math.min(retryDelay * 2, 30000)
+            connect()
+          }, retryDelay)
+        }
       }
     }
 
-    es.onerror = () => {
-      setStatus("error")
-      es.close()
-    }
+    connect()
 
-    return () => es.close()
+    return () => {
+      destroyed = true
+      if (retryTimer) clearTimeout(retryTimer)
+      es?.close()
+    }
   }, [])
 
   return (
