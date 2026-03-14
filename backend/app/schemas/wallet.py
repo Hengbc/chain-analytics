@@ -113,6 +113,8 @@ class DashboardSeedWallet(BaseModel):
     id: int
     address: str
     balance: str = "0"
+    ethValueUsd: Optional[float] = None
+    tokenValueUsd: Optional[float] = None
     txCount: int = 0
     fundedBy: Optional[str] = None
     createdAt: str

@@ -13,7 +13,7 @@ import orjson
 from fastapi.responses import ORJSONResponse
 
 from app.database import get_scylla_session, close_scylla, close_redis
-from app.routers import wallets, labels, stats
+from app.routers import wallets, labels, stats, stream
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -59,6 +59,7 @@ app.add_middleware(
 app.include_router(wallets.router)
 app.include_router(labels.router)
 app.include_router(stats.router)
+app.include_router(stream.router)
 
 
 @app.get("/")

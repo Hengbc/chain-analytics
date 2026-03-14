@@ -314,8 +314,3 @@ We built a **scalable, cost-effective** system that:
 **This is production-ready and built for long-term growth.**
 
 ---
-
-**Questions?**  
-Contact: [Your Name]  
-Technical Lead: [Dev Team Lead]  
-Project Page: [Link to GitHub/Docs]

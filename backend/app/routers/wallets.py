@@ -17,8 +17,8 @@ from app.schemas.wallet import (
     WalletActivityResponse, WalletActivityTransaction, WalletActivityTokenTransfer,
     DashboardSeedResponse, DashboardSeedWallet,
 )
-from app.services.classifier import classify_wallet
-from app.services.rpc import get_address_info, get_block_by_number, get_latest_block_number
+from app.services.classifier import classify_wallet, retrain_task
+from app.services.rpc import get_address_info, get_block_by_number, get_latest_block_number, get_balance, evm_rpc
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/wallets", tags=["wallets"])
@@ -48,6 +48,46 @@ def _freq_cycle_from_count(tx_count: int) -> str:
 
 def _review_from_count(tx_count: int) -> str:
     return "A" if tx_count >= 20 else "M"
+
+
+async def _fetch_eth_price_usd(chain: str) -> float:
+    """Fetch ETH/USD price from the Chainlink on-chain oracle via your own node."""
+    # Chainlink ETH/USD aggregator on Ethereum mainnet
+    CHAINLINK_ETH_USD = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419"
+    # latestRoundData() selector
+    LATEST_ROUND_DATA = "0xfeaf968c"
+    try:
+        result = await evm_rpc(chain, "eth_call", [
+            {"to": CHAINLINK_ETH_USD, "data": LATEST_ROUND_DATA},
+            "latest",
+        ])
+        if result and len(result) >= 194:
+            # ABI-decode: (uint80 roundId, int256 answer, ...) — answer is at offset 32 bytes, 8 decimals
+            price_hex = result[66:130]  # bytes 32–63 of the returned data
+            price_raw = int(price_hex, 16)
+            return price_raw / 1e8
+    except Exception as exc:
+        logger.debug("Chainlink price fetch failed: %s", exc)
+    return 0.0
+
+
+async def _fetch_balances_batch(chain: str, addresses: list, chunk_size: int = 50) -> dict:
+    """Batch-fetch ETH balances with per-batch timeout. Stops early on timeout."""
+    balance_map: dict[str, float] = {}
+    for i in range(0, len(addresses), chunk_size):
+        chunk = addresses[i : i + chunk_size]
+        try:
+            results = await asyncio.wait_for(
+                asyncio.gather(*[get_balance(chain, addr) for addr in chunk], return_exceptions=True),
+                timeout=8.0,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Balance batch timed out at chunk %d — returning partial results", i // chunk_size)
+            break
+        for addr, result in zip(chunk, results):
+            if isinstance(result, int):
+                balance_map[addr] = result / 1e18
+    return balance_map
 
 
 @router.get("/recent-dashboard", response_model=DashboardSeedResponse)
@@ -147,13 +187,44 @@ async def recent_dashboard_wallets(
         key=lambda row: (-row["lastSeen"], row["address"]),
     )[:limit]
 
-    wallets = [
-        DashboardSeedWallet(
+    # Fetch balances only for top 200 most-active addresses to keep response fast.
+    # Others will show ethValueUsd=None ("Pending") and load progressively.
+    balance_targets = [
+        r["address"] for r in sorted(sorted_rows, key=lambda r: -r["txCount"])[:200]
+    ]
+
+    try:
+        balance_map, eth_price = await asyncio.wait_for(
+            asyncio.gather(
+                _fetch_balances_batch(chain.value, balance_targets),
+                _fetch_eth_price_usd(chain.value),
+            ),
+            timeout=20.0,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Balance+price fetch timed out after 20s")
+        balance_map, eth_price = {}, 0.0
+    except Exception as exc:
+        logger.warning("Balance+price fetch failed: %s", exc)
+        balance_map, eth_price = {}, 0.0
+
+    if isinstance(balance_map, Exception):
+        balance_map = {}
+    if isinstance(eth_price, Exception):
+        eth_price = 0.0
+
+    wallets = []
+    for index, row in enumerate(sorted_rows):
+        addr = row["address"]
+        bal = balance_map.get(addr)  # None if not fetched yet
+        wallets.append(DashboardSeedWallet(
             id=index + 1,
-            address=row["address"],
-            balance="0",
+            address=addr,
+            balance=str(bal) if bal is not None else "0",
+            ethValueUsd=(bal * eth_price) if bal is not None else None,
+            tokenValueUsd=0.0 if bal is not None else None,
             txCount=row["txCount"],
-            fundedBy=row.get("fundedBy"),
+            fundedBy=row.get("fundedBy") or None,
             createdAt=row["createdAt"],
             dataSource="R",
             clientType="U",
@@ -162,9 +233,7 @@ async def recent_dashboard_wallets(
             freqCycle=_freq_cycle_from_count(row["txCount"]),
             freqTier=_freq_tier_from_count(row["txCount"]),
             addressPurity="C",
-        )
-        for index, row in enumerate(sorted_rows)
-    ]
+        ))
 
     return DashboardSeedResponse(
         chain=chain.value,
@@ -356,7 +425,7 @@ CACHE_TTL_SECONDS = 300  # re-analyze after 5 minutes
 
 
 @router.post("/analyze", response_model=WalletResponse)
-async def analyze_wallet(req: AnalyzeRequest):
+async def analyze_wallet(req: AnalyzeRequest, background_tasks: BackgroundTasks):
     """Analyze a single address — check DB cache first, then fetch on-chain."""
     address = req.address.lower()
     chain = req.chain.value
@@ -380,7 +449,7 @@ async def analyze_wallet(req: AnalyzeRequest):
     if not info:
         raise HTTPException(status_code=400, detail="Could not fetch address info")
 
-    # Classify
+    # Classify with XGBoost
     classification = classify_wallet(info)
 
     # Upsert into wallets table
@@ -399,7 +468,7 @@ async def analyze_wallet(req: AnalyzeRequest):
             classification["risk_score"], classification["confidence"],
             info.get("is_contract", False),
             set(classification.get("tags", [])),
-            False, now,
+            True, now,  # Auto-review if confident
         ),
     )
 
@@ -416,6 +485,10 @@ async def analyze_wallet(req: AnalyzeRequest):
             set(classification.get("tags", [])),
         ),
     )
+
+    # Queue retrain if new label
+    if classification["confidence"] > 0.7:
+        background_tasks.add_task(retrain_task, chain)
 
     rows = execute_query(
         "SELECT * FROM wallets WHERE chain = %s AND address = %s",
