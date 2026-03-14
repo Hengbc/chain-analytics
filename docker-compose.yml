@@ -1,113 +1,35 @@
+version: '3.8'
 services:
-  scylladb:
-    image: scylladb/scylla:5.4
-    container_name: chain-analytics-scylla
+  scylla:
+    image: scylladb/scylla:latest
+    container_name: scylla-db
     ports:
       - "9042:9042"
-    volumes:
-      - scylla_data:/var/lib/scylla
-      - ./scripts:/scripts
-    command: --smp 2 --memory 2G --overprovisioned 1
-    healthcheck:
-      test: ["CMD-SHELL", "cqlsh -e 'DESC KEYSPACES' || exit 1"]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
-    networks:
-      - chain-net
-
-  scylla-init:
-    image: scylladb/scylla:5.4
-    container_name: chain-analytics-scylla-init
-    depends_on:
-      scylladb:
-        condition: service_healthy
-    volumes:
-      - ./scripts/init_scylla.cql:/init.cql
-    entrypoint: ["cqlsh", "scylladb", "9042", "-f", "/init.cql"]
-    restart: "no"
-    networks:
-      - chain-net
-
-  redis:
-    image: redis:7-alpine
-    container_name: chain-analytics-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    networks:
-      - chain-net
-
-  api:
-    image: chain-analytics-backend:latest
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: chain-analytics-api
-    ports:
-      - "3001:3001"
-    env_file:
-      - ./backend/.env
     environment:
-      - SCYLLA_HOSTS=scylladb
-      - REDIS_URL=redis://redis:6379/0
-    depends_on:
-      scylladb:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - CLUSTER_NAME=chain-analytics
     volumes:
-      - ./backend/app:/app/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 3001 --reload
-    networks:
-      - chain-net
+      - scylla-data:/var/lib/scylla
 
-  indexer:
-    image: chain-analytics-backend:latest
-    container_name: chain-analytics-indexer
-    env_file:
-      - ./backend/.env
-    environment:
-      - SCYLLA_HOSTS=scylladb
-      - REDIS_URL=redis://redis:6379/0
+  backend:
+    build: ./backend
+    container_name: chain-backend
+    ports:
+      - "8000:8000"
     depends_on:
-      scylladb:
-        condition: service_healthy
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - scylla
+    environment:
+      - SCYLLA_HOST=scylla
+      - SCYLLA_PORT=9042
     volumes:
-      - ./backend/app:/app/app
-    command: python -m app.services.indexer
-    restart: unless-stopped
-    networks:
-      - chain-net
+      - ./scripts:/app/scripts
 
   frontend:
-    build:
-      context: ./eth-dashborad-anlys
-      dockerfile: Dockerfile
-      args:
-        - NEXT_PUBLIC_APP_URL=http://localhost:3000
-        - BACKEND_URL=http://api:3001
-    container_name: chain-analytics-frontend
+    build: ./eth-dashboard-analysis
+    container_name: chain-frontend
     ports:
       - "3000:3000"
-    environment:
-      - BACKEND_URL=http://api:3001
-      - NEXT_PUBLIC_APP_URL=http://localhost:3000
     depends_on:
-      - api
-    networks:
-      - chain-net
+      - backend
 
 volumes:
-  scylla_data:
-  redis_data:
-
-networks:
-  chain-net:
-    driver: bridge
+  scylla-data:
